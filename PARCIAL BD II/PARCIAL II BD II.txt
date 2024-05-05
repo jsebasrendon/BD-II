@@ -1,0 +1,184 @@
+// EJERCICIO 1
+CREATE OR REPLACE FUNCTION 
+edadPersona(persona persons.persons_id%type)
+RETURN NUMBER
+IS
+var_birthday DATE;
+fecha_actual DATE;
+edad NUMBER;
+BEGIN
+SELECT birthdate INTO var_birthday FROM persons WHERE PERSONS_ID= persona ;
+FECHA_ACTUAL:=SYSDATE;
+edad:= (FECHA_ACTUAL-VAR_birthday)/365;
+RETURN edad;
+END;
+SELECT edadPersona(319) FROM dual;
+
+//EJERCICIO 2
+
+CREATE OR REPLACE TRIGGER 
+tr_rest_mina
+BEFORE INSERT OR UPDATE ON workers FOR EACH ROW
+DECLARE
+var_edad_persona DAte;
+fecha_actual DATE;
+edad number(2);
+VAR_ESTADO NUMBER;
+BEGIN
+SELECT birthdate INTO var_edad_persona FROM persons WHERE persons_id=:new.persons_id;
+SELECT DIAGNOSTICS_ID INTO VAR_ESTADO FROM PERSONS_MEDICAL_CHECK WHERE PERSONS_ID=:NEW.PERSONS_ID;
+fecha_actual:=sysdate;
+EDAD:= (FECHA_ACTUAL-VAR_edad_persona)/365;
+CASE
+WHEN edad<12 OR EDAD>70 then
+RAISE_APPLICATION_ERROR(-20001,'En la mina no se permiten niños ni ancianos');
+
+WHEN VAR_ESTADO !=1 THEN
+RAISE_APPLICATION_ERROR(-20001,'En la mina no se permiten enfermos o con deficiencias');
+END CASE;
+END;
+
+
+//EJERCICIO 3
+CREATE OR REPLACE PROCEDURE 
+registrar_worker(
+  var_WORKERS_ID workers.WORKERS_ID%type,
+  var_MINES_ID workers.MINES_ID%type,
+  var_PERSONS_ID workers.PERSONS_ID%type
+)
+AS
+  var_val_id number;
+BEGIN
+  SELECT COUNT(*) INTO var_val_id FROM persons WHERE persons_id = var_PERSONS_ID;
+    IF var_val_id = 0 THEN
+        RAISE_APPLICATION_ERROR(-20001,'No existe la persona en la base de datos.');
+    ELSE
+        INSERT INTO WORKERS VALUES (var_WORKERS_ID, var_MINES_ID, var_PERSONS_ID, sysdate);
+        DBMS_OUTPUT.PUT_LINE('Registrado Correctamente');    
+    END IF;
+END;
+
+EXECUTE registrar_worker(2436780,2,24398);
+
+
+//EJERCICIO 4
+create or replace procedure prc_4
+(mina mines.MINE_NAME%type )
+as
+begin
+for i in(SELECT p.persons_id as per_, p.name as name_, p.lastname as last_, p.birthdate as birth_
+FROM persons p 
+INNER JOIN workers w ON p.persons_id = w.persons_id 
+INNER JOIN mines m ON w.mines_id = m.mines_id 
+WHERE LOWER(m.mine_name) = LOWER(mina) AND p.sex = 'F') LOOP
+DBMS_OUTPUT.PUT_LINE('ID_MUJER: '||i.per_||' |NOMBRE: '||i.name_||' |APELLIDOS: '||i.last_||' |FECHA_NACIMIENTO: '||i.birth_);
+END LOOP;
+END;
+
+EXECUTE prc_4('&mina')
+
+//EJERCICIO 5
+
+CREATE OR REPLACE FUNCTION 
+vivo_o_muerto(trabajador workers.workers_id%TYPE)
+RETURN VARCHAR2
+IS
+  var_1 NUMBER;
+  var_boolean boolean;
+BEGIN
+  BEGIN
+  var_boolean:=true;
+    SELECT persons_id into var_1 FROM persons_defuntions WHERE persons_id=trabajador;
+   RETURN 'EL TRABAJADOR CON ID: '||trabajador||' PERDIO LA VIDA';
+  EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+      var_boolean:=false;
+      RETURN 'EL TRABAJADOR CON ID: '||trabajador||' SE ENCUENTRA CON VIDA';
+  END;
+END;
+SELECT vivo_o_muerto(39452) from dual;
+
+
+//EJERCICIO 6
+
+CREATE OR REPLACE FUNCTION kg_mina(mina mines.mine_name%type)
+return varchar
+is
+var_1 varchar(300);
+kgs number;
+begin
+SELECT SUM(pw.KG_PRODUCT)as kgs into kgs FROM PRODUCT_WORKER pw inner join mines m on pw.PRODUCTS_ID= m.PRODUCTS_ID and LOWER(m.mine_name)=LOWER(mina)
+GROUP BY m.mine_name;
+return 'MINA: '||MINA||' |KILOGRAMOS TOTALES MINADOS: '||KGS||'KG';
+end;
+
+select kg_mina('&ESCOJA_LA_MINA') from dual;
+
+
+// EJERCICIO 7
+
+DECLARE
+cursor cur_07 is
+SELECT p.persons_id as id, p.name as nombre, p.lastname as apellido,p.sex as sexo,(sysdate - p.birthdate)/365 as edad FROM persons p
+INNER JOIN persons_defuntions pf ON pf.persons_id = p.persons_id
+WHERE (sysdate - p.birthdate) <= 6570 ;
+
+begin
+for i in cur_07 loop
+DBMS_OUTPUT.PUT_LINE('ID: ' || i.id ||'  NOMBRE: ' || i.nombre || ' APELLIDO: ' || i.apellido ||'  SEXO: ' || i.sexo || ' EDAD: ' || i.edad );
+ end loop;
+end; 
+
+
+//EJERCICIO 8
+
+create or replace procedure prc_8
+(mina mines.MINE_NAME%type )
+as
+cantvih number;
+begin
+SELECT count (*) into cantvih
+FROM persons p 
+INNER JOIN persons_medical_check pmc ON p.persons_id = pmc.persons_id
+INNER JOIN workers w ON p.persons_id = w.persons_id 
+INNER JOIN mines m ON w.mines_id = m.mines_id 
+WHERE LOWER(m.mine_name) = LOWER(mina) AND pmc.diagnostics_id = 3;
+DBMS_OUTPUT.PUT_LINE('LA CANTIDAD DE PACIENTES CON VIH EN LA MINA: '||mina|| ' ES DE: ' ||cantvih);
+
+END;
+
+EXECUTE prc_8('&mina')
+
+
+//EJERCICIO 9
+SET SERVEROUTPUT ON;
+CREATE OR REPLACE PROCEDURE mejor_worker
+AS
+var_persona VARCHAR(200);
+BEGIN
+FOR I IN (
+SELECT m1.mine_name AS mina, q1.persons_id AS persona, MAX(q1.suma) AS kg_recolectados
+FROM (
+SELECT M.mine_name, pw.persons_id, SUM(pw.kg_product) AS suma
+FROM product_worker pw
+INNER JOIN mines M ON pw.products_id = M.products_id
+GROUP BY M.mine_name, pw.persons_id
+)  q1
+INNER JOIN (
+SELECT mine_name, MAX(suma) AS max_suma
+FROM (
+SELECT M.mine_name, pw.persons_id, SUM(pw.kg_product) AS suma
+FROM product_worker pw
+INNER JOIN mines M ON pw.products_id = M.products_id
+GROUP BY M.mine_name, pw.persons_id
+)  
+GROUP BY mine_name
+)  m1 ON q1.mine_name = m1.mine_name AND q1.suma = m1.max_suma
+GROUP BY m1.mine_name, q1.persons_id
+) LOOP
+SELECT NAME INTO var_persona FROM persons WHERE PERSONS_ID= I.persona;
+DBMS_OUTPUT.PUT_LINE('NOMBRE: '||var_persona||' |ID: '||I.persona||' |FUE EL MEJOR TRABAJADOR DE LA MINA DE '||UPPER(I.mina)||' |RECOLECTÓ: '||I.kg_recolectados||'KG DE LOS PRODUCTOS');
+END LOOP;
+END;
+
+
